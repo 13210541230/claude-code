@@ -38,3 +38,8 @@ data
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+.worktrees
+.claude/.worktrees/
+.claude/worktrees/
+.ccg/
+.release/
