@@ -1421,10 +1421,12 @@ function PromptInput({
       const hasDirectorySuggestions =
         suggestionsState.suggestions.length > 0 &&
         suggestionsState.suggestions.every(s => s.description === 'directory')
+      const isSlashInput = mode === 'prompt' && inputParam.trimStart().startsWith('/')
 
       if (
         suggestionsState.suggestions.length > 0 &&
         !isSubmittingSlashCommand &&
+        !isSlashInput &&
         !hasDirectorySuggestions
       ) {
         logForDebugging(
@@ -2997,3 +2999,4 @@ function buildBorderText(
 }
 
 export default React.memo(PromptInput)
+

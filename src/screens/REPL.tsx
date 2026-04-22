@@ -117,6 +117,7 @@ import {
   type Command,
   type CommandResultDisplay,
   type ResumeEntrypoint,
+  filterOutPromptCommands,
   getCommandName,
   isCommandEnabled,
 } from '../commands.js';
@@ -787,7 +788,7 @@ export type Props = {
   disabled?: boolean;
   // Optional agent definition to use for the main thread
   mainThreadAgentDefinition?: AgentDefinition;
-  // When true, disables all slash commands
+  // When true, disables prompt/skill slash commands
   disableSlashCommands?: boolean;
   // Task list id: when set, enables tasks mode that watches a task list and auto-processes tasks.
   taskListId?: string;
@@ -1071,8 +1072,12 @@ export function REPL({
   // Merge commands from local state, plugins, and MCP
   const commandsWithPlugins = useMergedCommands(localCommands, plugins.commands as Command[]);
   const mergedCommands = useMergedCommands(commandsWithPlugins, mcp.commands as Command[]);
-  // Filter out all commands if disableSlashCommands is true
-  const commands = useMemo(() => (disableSlashCommands ? [] : mergedCommands), [disableSlashCommands, mergedCommands]);
+  // When disableSlashCommands is true, hide prompt/skill commands only.
+  // Keep built-in local commands like /help and /quit available.
+  const commands = useMemo(
+    () => (disableSlashCommands ? filterOutPromptCommands(mergedCommands) : mergedCommands),
+    [disableSlashCommands, mergedCommands],
+  );
 
   useIdeLogging(isRemoteSession ? EMPTY_MCP_CLIENTS : mcp.clients);
   useIdeSelection(isRemoteSession ? EMPTY_MCP_CLIENTS : mcp.clients, setIDESelection);

@@ -752,6 +752,37 @@ export function filterCommandsForRemoteMode(commands: Command[]): Command[] {
   return commands.filter(cmd => REMOTE_SAFE_COMMANDS.has(cmd))
 }
 
+/**
+ * Filters out prompt/skill commands while keeping built-in local commands
+ * (e.g. /help, /exit, /quit aliases) available.
+ */
+export function filterOutPromptCommands(commands: Command[]): Command[] {
+  return commands.filter(cmd => cmd.type !== 'prompt')
+}
+
+/**
+ * Filters commands available to non-interactive/headless sessions.
+ *
+ * - Prompt commands: only when not disableNonInteractive.
+ * - Local commands: only when supportsNonInteractive.
+ * - Local JSX commands: keep /exit (and its aliases like /quit).
+ */
+export function filterCommandsForHeadlessMode(
+  commands: Command[],
+  disablePromptCommands = false,
+): Command[] {
+  const candidateCommands = disablePromptCommands
+    ? filterOutPromptCommands(commands)
+    : commands
+
+  return candidateCommands.filter(
+    command =>
+      (command.type === 'prompt' && !command.disableNonInteractive) ||
+      (command.type === 'local' && command.supportsNonInteractive) ||
+      (command.type === 'local-jsx' && command.name === 'exit'),
+  )
+}
+
 export function findCommand(
   commandName: string,
   commands: Command[],

@@ -161,7 +161,11 @@ import {
 	setMainThreadAgentType,
 	setTeleportedSessionInfo,
 } from "./bootstrap/state.js";
-import { filterCommandsForRemoteMode, getCommands } from "./commands.js";
+import {
+	filterCommandsForHeadlessMode,
+	filterCommandsForRemoteMode,
+	getCommands,
+} from "./commands.js";
 import type { StatsStore } from "./context/stats.js";
 import {
   launchAssistantInstallWizard,
@@ -3862,17 +3866,12 @@ async function run(): Promise<CommanderCommand> {
 					process.exit(1);
 				}
 
-				// Headless mode supports all prompt commands and some local commands
-				// If disableSlashCommands is true, return empty array
-				const commandsHeadless = disableSlashCommands
-					? []
-					: commands.filter(
-							(command) =>
-								(command.type === "prompt" &&
-									!command.disableNonInteractive) ||
-								(command.type === "local" &&
-									command.supportsNonInteractive),
-						);
+				// Headless mode supports prompt commands and non-interactive local commands.
+				// When disableSlashCommands is true, disable prompt/skill commands only.
+				const commandsHeadless = filterCommandsForHeadlessMode(
+					commands,
+					disableSlashCommands,
+				);
 
 				const defaultState = getDefaultAppState();
 				const headlessInitialState: AppState = {
