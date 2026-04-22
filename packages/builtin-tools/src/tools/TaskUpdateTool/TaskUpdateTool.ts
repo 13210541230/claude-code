@@ -231,11 +231,14 @@ export const TaskUpdateTool = buildTool({
         // Run TaskCompleted hooks when marking a task as completed
         if (status === 'completed') {
           const blockingErrors: string[] = []
+          const taskSubjectForHooks = updates.subject ?? existingTask.subject
+          const taskDescriptionForHooks =
+            updates.description ?? existingTask.description
 
           const generator = executeTaskCompletedHooks(
             taskId,
-            existingTask.subject,
-            existingTask.description,
+            taskSubjectForHooks,
+            taskDescriptionForHooks,
             getAgentName(),
             getTeamName(),
             undefined,

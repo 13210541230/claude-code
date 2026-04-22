@@ -57,7 +57,7 @@ import { FileStateCache } from '../../utils/fileStateCache.js'
 import { getDefaultAppState } from '../../state/AppStateStore.js'
 import type { AppState } from '../../state/AppStateStore.js'
 import { createAcpCanUseTool } from './permissions.js'
-import { forwardSessionUpdates, replayHistoryMessages, type ToolUseCache } from './bridge.js'
+import { forwardSessionUpdates, replayHistoryMessages, type ToolUseCache } from './bridgeFacade.js'
 import {
   resolvePermissionMode,
   computeSessionFingerprint,

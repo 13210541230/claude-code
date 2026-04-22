@@ -186,11 +186,15 @@ export function toDisplayPath(filePath: string, cwd?: string): string {
   if (!cwd) return filePath
   const resolvedCwd = path.resolve(cwd)
   const resolvedFile = path.resolve(filePath)
+  const relativePath = path.relative(resolvedCwd, resolvedFile)
+  const isOutsideCwd =
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
   if (
-    resolvedFile.startsWith(resolvedCwd + path.sep) ||
-    resolvedFile === resolvedCwd
+    !isOutsideCwd
   ) {
-    return path.relative(resolvedCwd, resolvedFile)
+    return relativePath.split(path.sep).join('/')
   }
   return filePath
 }
