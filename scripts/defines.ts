@@ -1,3 +1,5 @@
+import packageJson from '../package.json'
+
 /**
  * Shared MACRO define map used by both dev.ts (runtime -d flags)
  * and build.ts (Bun.build define option).
@@ -7,7 +9,7 @@
  */
 export function getMacroDefines(): Record<string, string> {
     return {
-        "MACRO.VERSION": JSON.stringify("2.1.888"),
+        "MACRO.VERSION": JSON.stringify(packageJson.version),
         "MACRO.BUILD_TIME": JSON.stringify(new Date().toISOString()),
         "MACRO.FEEDBACK_CHANNEL": JSON.stringify(""),
         "MACRO.ISSUES_EXPLAINER": JSON.stringify(""),

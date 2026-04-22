@@ -60,7 +60,10 @@
     "docs:dev": "npx mintlify dev",
     "typecheck": "tsc --noEmit",
     "test:all": "bun run typecheck && bun test",
-    "rcs": "bun run scripts/rcs.ts"
+    "rcs": "bun run scripts/rcs.ts",
+    "release-local": "bun run scripts/release-local.ts",
+    "setup-myclaude-path": "bun run scripts/add-myclaude-to-path.ts",
+    "release-local:global": "bun run build && bun run release-local && bun run setup-myclaude-path"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.19.0",
