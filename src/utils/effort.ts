@@ -5,6 +5,7 @@ import { isProSubscriber, isMaxSubscriber, isTeamSubscriber } from './auth.js'
 import { getFeatureValue_CACHED_MAY_BE_STALE } from 'src/services/analytics/growthbook.js'
 import { getAPIProvider } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
+import { isFirstPartyAnthropicBaseUrl } from './model/providers.js'
 import { isEnvTruthy } from './envUtils.js'
 import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
 import { resolveAntModel } from './model/antModels.js'
@@ -20,6 +21,12 @@ export const EFFORT_LEVELS = [
 ] as const satisfies readonly EffortLevel[]
 
 export type EffortValue = EffortLevel | number
+export type PersistableEffortLevel = Exclude<EffortLevel, 'xhigh'>
+
+function isCustomAnthropicGateway(): boolean {
+  return getAPIProvider() === 'firstParty' && !isFirstPartyAnthropicBaseUrl()
+}
+
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports the effort parameter.
 export function modelSupportsEffort(model: string): boolean {
@@ -57,6 +64,9 @@ export function modelSupportsMaxEffort(model: string): boolean {
   if (supported3P !== undefined) {
     return supported3P
   }
+  if (isCustomAnthropicGateway()) {
+    return true
+  }
   if (model.toLowerCase().includes('opus-4-6')) {
     return true
   }
@@ -78,6 +88,9 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
     return value
   }
   const str = String(value).toLowerCase()
+  if (str === 'xhigh') {
+    return 'max'
+  }
   if (isEffortLevel(str)) {
     return str
   }
@@ -96,7 +109,7 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
  */
 export function toPersistableEffort(
   value: EffortValue | undefined,
-): EffortLevel | undefined {
+): PersistableEffortLevel | undefined {
   if (value === 'low' || value === 'medium' || value === 'high') {
     return value
   }
@@ -106,7 +119,7 @@ export function toPersistableEffort(
   return undefined
 }
 
-export function getInitialEffortSetting(): EffortLevel | undefined {
+export function getInitialEffortSetting(): PersistableEffortLevel | undefined {
   // toPersistableEffort filters 'max' for non-ants on read, so a manually
   // edited settings.json doesn't leak session-scoped max into a fresh session.
   return toPersistableEffort(getInitialSettings().effortLevel)
@@ -166,6 +179,22 @@ export function resolveAppliedEffort(
     return 'high'
   }
   return resolved
+}
+
+export function resolveApiEffortValue(
+  effortValue: EffortValue | undefined,
+): EffortValue | 'xhigh' | undefined {
+  if (typeof effortValue !== 'string') {
+    return effortValue
+  }
+  if (
+    effortValue === 'max' &&
+    isCustomAnthropicGateway() &&
+    isEnvTruthy(process.env.CLAUDE_CODE_PROXY_EFFORT_XHIGH)
+  ) {
+    return 'xhigh'
+  }
+  return effortValue
 }
 
 /**
@@ -232,6 +261,8 @@ export function getEffortLevelDescription(level: EffortLevel): string {
     case 'high':
       return 'Comprehensive implementation with extensive testing and documentation'
     case 'max':
+      return 'Maximum capability with deepest reasoning (Opus 4.6 only)'
+    case 'xhigh':
       return 'Maximum capability with deepest reasoning (Opus 4.6 only)'
   }
 }

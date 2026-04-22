@@ -114,17 +114,18 @@ function unsetEffortLevel(): EffortCommandResult {
 
 export function executeEffort(args: string): EffortCommandResult {
   const normalized = args.toLowerCase()
+  const normalizedEffort = normalized === 'xhigh' ? 'max' : normalized
   if (normalized === 'auto' || normalized === 'unset') {
     return unsetEffortLevel()
   }
 
-  if (!isEffortLevel(normalized)) {
+  if (!isEffortLevel(normalizedEffort)) {
     return {
-      message: `Invalid argument: ${args}. Valid options are: low, medium, high, max, auto`,
+      message: `Invalid argument: ${args}. Valid options are: low, medium, high, max, xhigh, auto`,
     }
   }
 
-  return setEffortValue(normalized)
+  return setEffortValue(normalizedEffort)
 }
 
 function ShowCurrentEffort({
@@ -169,7 +170,7 @@ export async function call(
 
   if (COMMON_HELP_ARGS.includes(args)) {
     onDone(
-      'Usage: /effort [low|medium|high|max|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- max: Maximum capability with deepest reasoning (Opus 4.6 only)\n- auto: Use the default effort level for your model',
+      'Usage: /effort [low|medium|high|max|xhigh|auto]\n\nEffort levels:\n- low: Quick, straightforward implementation\n- medium: Balanced approach with standard testing\n- high: Comprehensive implementation with extensive testing\n- max: Maximum capability with deepest reasoning (Opus 4.6 only)\n- xhigh: Alias of max (for custom providers)\n- auto: Use the default effort level for your model',
     )
     return
   }

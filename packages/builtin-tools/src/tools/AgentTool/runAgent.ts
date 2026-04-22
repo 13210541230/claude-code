@@ -56,14 +56,17 @@ import { registerFrontmatterHooks } from 'src/utils/hooks/registerFrontmatterHoo
 import { clearSessionHooks } from 'src/utils/hooks/sessionHooks.js'
 import { executeSubagentStartHooks } from 'src/utils/hooks.js'
 import { createUserMessage } from 'src/utils/messages.js'
-import { getAgentModel } from 'src/utils/model/agent.js'
+import {
+  getAgentModel,
+  resolveAgentEffortValue,
+} from 'src/utils/model/agent.js'
 import { getAPIProvider } from 'src/utils/model/providers.js'
 import {
   createSubagentTrace,
   endTrace,
   isLangfuseEnabled,
 } from 'src/services/langfuse/index.js'
-import type { ModelAlias } from 'src/utils/model/aliases.js'
+import type { EffortValue } from 'src/utils/effort.js'
 import {
   clearAgentTranscriptSubdir,
   recordSidechainTranscript,
@@ -262,6 +265,7 @@ export async function* runAgent({
   querySource,
   override,
   model,
+  reasoningEffort,
   maxTurns,
   preserveToolUseResults,
   availableTools,
@@ -291,7 +295,8 @@ export async function* runAgent({
     abortController?: AbortController
     agentId?: AgentId
   }
-  model?: ModelAlias
+  model?: string
+  reasoningEffort?: EffortValue
   maxTurns?: number
   /** Preserve toolUseResult on messages for subagents with viewable transcripts */
   preserveToolUseResults?: boolean
@@ -484,11 +489,11 @@ export async function* runAgent({
       }
     }
 
-    // Override effort level if agent defines one
-    const effortValue =
-      agentDefinition.effort !== undefined
-        ? agentDefinition.effort
-        : state.effortValue
+    const effortValue = resolveAgentEffortValue(
+      reasoningEffort,
+      agentDefinition.effort,
+      state.effortValue,
+    )
 
     if (
       toolPermissionContext === state.toolPermissionContext &&

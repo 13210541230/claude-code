@@ -146,3 +146,4 @@ describe('settings hasAutoModeOptIn', () => {
     expect(hasAutoModeOptIn()).toBe(true)
   })
 })
+

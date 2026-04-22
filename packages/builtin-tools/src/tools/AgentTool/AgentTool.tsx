@@ -58,12 +58,20 @@ import { AbortError, errorMessage, toError } from 'src/utils/errors.js'
 import type { CacheSafeParams } from 'src/utils/forkedAgent.js'
 import { lazySchema } from 'src/utils/lazySchema.js'
 import {
+  EFFORT_LEVELS,
+  type EffortValue,
+  parseEffortValue,
+} from 'src/utils/effort.js'
+import {
   createUserMessage,
   extractTextContent,
   isSyntheticMessage,
   normalizeMessages,
 } from 'src/utils/messages.js'
-import { getAgentModel } from 'src/utils/model/agent.js'
+import {
+  getAgentModel,
+  validateAgentToolModelInput,
+} from 'src/utils/model/agent.js'
 import { permissionModeSchema } from 'src/utils/permissions/PermissionMode.js'
 import type { PermissionResult } from 'src/utils/permissions/PermissionResult.js'
 import {
@@ -174,10 +182,16 @@ const baseInputSchema = lazySchema(() =>
       .optional()
       .describe('The type of specialized agent to use for this task'),
     model: z
-      .enum(['sonnet', 'opus', 'haiku'])
+      .string()
       .optional()
       .describe(
         "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.",
+      ),
+    reasoning_effort: z
+      .union([z.enum(EFFORT_LEVELS), z.literal('xhigh'), z.number().int()])
+      .optional()
+      .describe(
+        "Optional reasoning effort override for this agent. Takes precedence over the agent definition's effort frontmatter and parent effort.",
       ),
     run_in_background: z
       .boolean()
@@ -390,6 +404,7 @@ export const AgentTool = buildTool({
       subagent_type,
       description,
       model: modelParam,
+      reasoning_effort,
       run_in_background,
       name,
       team_name,
@@ -403,7 +418,12 @@ export const AgentTool = buildTool({
     onProgress?,
   ) {
     const startTime = Date.now()
-    const model = isCoordinatorMode() ? undefined : modelParam
+    const requestedModel = isCoordinatorMode() ? undefined : modelParam
+    const { normalizedModel: model } =
+      await validateAgentToolModelInput(requestedModel)
+    const parsedReasoningEffort = parseEffortValue(reasoning_effort) as
+      | EffortValue
+      | undefined
 
     // Get app state for permission mode and agent filtering
     const appState = toolUseContext.getAppState()
@@ -886,7 +906,8 @@ export const AgentTool = buildTool({
           selectedAgent.agentType,
           isBuiltInAgent(selectedAgent),
         ),
-      model: isForkPath ? undefined : model,
+      model,
+      reasoningEffort: parsedReasoningEffort,
       // Fork path: pass parent's system prompt AND parent's exact tool
       // array (cache-identical prefix). workerTools is rebuilt under
       // permissionMode 'bubble' which differs from the parent's mode, so

@@ -6,18 +6,22 @@ mock.module("src/utils/thinking.js", () => ({
 }));
 mock.module("src/utils/settings/settings.js", () => ({
   getInitialSettings: () => ({}),
-}));
-mock.module("src/utils/auth.js", () => ({
-  isProSubscriber: () => false,
-  isMaxSubscriber: () => false,
-  isTeamSubscriber: () => false,
+  getSettings_DEPRECATED: () => ({}),
+  getSettingsForSource: () => undefined,
+  getSettingsFilePathForSource: () => "",
+  getRelativeSettingsFilePathForSource: () => "",
+  updateSettingsForSource: () => ({ error: undefined }),
+  settingsMergeCustomizer: () => undefined,
+  getManagedSettingsKeysForLogging: () => [],
 }));
 mock.module("src/services/analytics/growthbook.js", () => ({
   getFeatureValue_CACHED_MAY_BE_STALE: () => null,
+  checkStatsigFeatureGate_CACHED_MAY_BE_STALE: () => false,
 }));
 mock.module("src/utils/model/modelSupportOverrides.js", () => ({
   get3PModelCapabilityOverride: () => undefined,
 }));
+
 
 const {
   isEffortLevel,
@@ -26,6 +30,8 @@ const {
   convertEffortValueToLevel,
   getEffortLevelDescription,
   resolvePickerEffortPersistence,
+  resolveAppliedEffort,
+  resolveApiEffortValue,
   EFFORT_LEVELS,
 } = await import("src/utils/effort.js");
 
@@ -89,6 +95,11 @@ describe("parseEffortValue", () => {
     expect(parseEffortValue("medium")).toBe("medium");
     expect(parseEffortValue("high")).toBe("high");
     expect(parseEffortValue("max")).toBe("max");
+  });
+
+  test("maps xhigh alias to max", () => {
+    expect(parseEffortValue("xhigh")).toBe("max");
+    expect(parseEffortValue("XHIGH")).toBe("max");
   });
 
   test("parses numeric string to number", () => {
@@ -251,5 +262,87 @@ describe("resolvePickerEffortPersistence", () => {
   test("returns undefined picked value when no explicit and matches default", () => {
     const result = resolvePickerEffortPersistence(undefined, "high" as any, undefined, false);
     expect(result).toBeUndefined();
+  });
+});
+
+// ─── resolveAppliedEffort ───────────────────────────────────────────────
+
+describe("resolveAppliedEffort", () => {
+  const savedBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const savedUseOpenAI = process.env.CLAUDE_CODE_USE_OPENAI;
+
+  beforeEach(() => {
+    delete process.env.CLAUDE_CODE_USE_OPENAI;
+    delete process.env.ANTHROPIC_BASE_URL;
+  });
+
+  afterEach(() => {
+    if (savedUseOpenAI === undefined) {
+      delete process.env.CLAUDE_CODE_USE_OPENAI;
+    } else {
+      process.env.CLAUDE_CODE_USE_OPENAI = savedUseOpenAI;
+    }
+
+    if (savedBaseUrl === undefined) {
+      delete process.env.ANTHROPIC_BASE_URL;
+    } else {
+      process.env.ANTHROPIC_BASE_URL = savedBaseUrl;
+    }
+  });
+
+  test("keeps max on custom first-party gateway for non-opus models", () => {
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.com";
+
+    expect(resolveAppliedEffort("claude-sonnet-4-6-20250514", "max")).toBe("max");
+  });
+
+  test("downgrades max to high on true first-party base URL for non-opus models", () => {
+    process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+
+    expect(resolveAppliedEffort("claude-sonnet-4-6-20250514", "max")).toBe("high");
+  });
+});
+
+describe("resolveApiEffortValue", () => {
+  const savedBaseUrl = process.env.ANTHROPIC_BASE_URL;
+  const savedProxyFlag = process.env.CLAUDE_CODE_PROXY_EFFORT_XHIGH;
+  const savedUseOpenAI = process.env.CLAUDE_CODE_USE_OPENAI;
+
+  beforeEach(() => {
+    delete process.env.CLAUDE_CODE_USE_OPENAI;
+    delete process.env.ANTHROPIC_BASE_URL;
+    process.env.CLAUDE_CODE_PROXY_EFFORT_XHIGH = "1";
+  });
+
+  afterEach(() => {
+    if (savedUseOpenAI === undefined) {
+      delete process.env.CLAUDE_CODE_USE_OPENAI;
+    } else {
+      process.env.CLAUDE_CODE_USE_OPENAI = savedUseOpenAI;
+    }
+
+    if (savedBaseUrl === undefined) {
+      delete process.env.ANTHROPIC_BASE_URL;
+    } else {
+      process.env.ANTHROPIC_BASE_URL = savedBaseUrl;
+    }
+
+    if (savedProxyFlag === undefined) {
+      delete process.env.CLAUDE_CODE_PROXY_EFFORT_XHIGH;
+    } else {
+      process.env.CLAUDE_CODE_PROXY_EFFORT_XHIGH = savedProxyFlag;
+    }
+  });
+
+  test("maps max to xhigh only for custom first-party gateway with env flag", () => {
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.com";
+    expect(resolveApiEffortValue("max")).toBe("xhigh");
+
+    process.env.ANTHROPIC_BASE_URL = "https://api.anthropic.com";
+    expect(resolveApiEffortValue("max")).toBe("max");
+
+    process.env.CLAUDE_CODE_USE_OPENAI = "1";
+    process.env.ANTHROPIC_BASE_URL = "https://proxy.example.com";
+    expect(resolveApiEffortValue("max")).toBe("max");
   });
 });

@@ -82,7 +82,9 @@ const AgentJsonSchema = lazySchema(() =>
       .min(1, 'Model cannot be empty')
       .transform(m => (m.toLowerCase() === 'inherit' ? 'inherit' : m))
       .optional(),
-    effort: z.union([z.enum(EFFORT_LEVELS), z.number().int()]).optional(),
+    effort: z
+      .union([z.enum(EFFORT_LEVELS), z.literal('xhigh'), z.number().int()])
+      .optional(),
     permissionMode: z.enum(PERMISSION_MODES).optional(),
     mcpServers: z.array(AgentMcpServerSpecSchema()).optional(),
     hooks: HooksSchema().optional(),

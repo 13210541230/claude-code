@@ -1,13 +1,12 @@
 import type { PermissionMode } from '../permissions/PermissionMode.js'
+import type { EffortValue } from '../effort.js'
 import { capitalize } from '../stringUtils.js'
-import { MODEL_ALIASES, type ModelAlias } from './aliases.js'
+import { MODEL_ALIASES, type ModelAlias, isModelAlias } from './aliases.js'
 import { applyBedrockRegionPrefix, getBedrockRegionPrefix } from './bedrock.js'
-import {
-  getCanonicalName,
-  getRuntimeMainLoopModel,
-  parseUserSpecifiedModel,
-} from './model.js'
+import { getCanonicalName, parseUserSpecifiedModel } from './model.js'
+import { getModelOptions } from './modelOptions.js'
 import { getAPIProvider } from './providers.js'
+import { validateModel } from './validateModel.js'
 
 export const AGENT_MODEL_OPTIONS = [...MODEL_ALIASES, 'inherit'] as const
 export type AgentModelAlias = (typeof AGENT_MODEL_OPTIONS)[number]
@@ -37,7 +36,7 @@ export function getDefaultSubagentModel(): string {
 export function getAgentModel(
   agentModel: string | undefined,
   parentModel: string,
-  toolSpecifiedModel?: ModelAlias,
+  toolSpecifiedModel?: string,
   permissionMode?: PermissionMode,
 ): string {
   if (process.env.CLAUDE_CODE_SUBAGENT_MODEL) {
@@ -67,24 +66,28 @@ export function getAgentModel(
   }
 
   // Prioritize tool-specified model if provided
-  if (toolSpecifiedModel) {
-    if (aliasMatchesParentTier(toolSpecifiedModel, parentModel)) {
+  const normalizedToolSpecifiedModel = toolSpecifiedModel?.trim()
+  if (normalizedToolSpecifiedModel) {
+    if (normalizedToolSpecifiedModel === 'inherit') {
       return parentModel
     }
-    const model = parseUserSpecifiedModel(toolSpecifiedModel)
-    return applyParentRegionPrefix(model, toolSpecifiedModel)
+    if (isModelAlias(normalizedToolSpecifiedModel)) {
+      if (aliasMatchesParentTier(normalizedToolSpecifiedModel, parentModel)) {
+        return parentModel
+      }
+      const model = parseUserSpecifiedModel(normalizedToolSpecifiedModel)
+      return applyParentRegionPrefix(model, normalizedToolSpecifiedModel)
+    }
+    return applyParentRegionPrefix(
+      normalizedToolSpecifiedModel,
+      normalizedToolSpecifiedModel,
+    )
   }
 
   const agentModelWithExp = agentModel ?? getDefaultSubagentModel()
 
   if (agentModelWithExp === 'inherit') {
-    // Apply runtime model resolution for inherit to get the effective model
-    // This ensures agents using 'inherit' get opusplan→Opus resolution in plan mode
-    return getRuntimeMainLoopModel({
-      permissionMode: permissionMode ?? 'default',
-      mainLoopModel: parentModel,
-      exceeds200kTokens: false,
-    })
+    return parentModel
   }
 
   if (aliasMatchesParentTier(agentModelWithExp, parentModel)) {
@@ -126,6 +129,54 @@ export function getAgentModelDisplay(model: string | undefined): string {
   if (!model) return 'Inherit from parent (default)'
   if (model === 'inherit') return 'Inherit from parent'
   return capitalize(model)
+}
+
+export function resolveAgentEffortValue(
+  toolSpecifiedEffort: EffortValue | undefined,
+  agentDefinedEffort: EffortValue | undefined,
+  parentEffort: EffortValue | undefined,
+): EffortValue | undefined {
+  if (toolSpecifiedEffort !== undefined) {
+    return toolSpecifiedEffort
+  }
+  if (agentDefinedEffort !== undefined) {
+    return agentDefinedEffort
+  }
+  return parentEffort
+}
+
+export async function validateAgentToolModelInput(
+  toolSpecifiedModel: string | undefined,
+): Promise<{ normalizedModel: string | undefined }> {
+  const normalizedModel = toolSpecifiedModel?.trim()
+  if (normalizedModel === undefined) {
+    return { normalizedModel: undefined }
+  }
+
+  if (normalizedModel.length === 0) {
+    throw new Error('Model name cannot be empty')
+  }
+
+  if (normalizedModel === 'inherit') {
+    return { normalizedModel }
+  }
+
+  const validation = await validateModel(normalizedModel)
+  if (!validation.valid) {
+    const visibleModels = getModelOptions()
+      .map(option => option.value)
+      .filter((value): value is string => value !== null)
+    const preview = visibleModels.slice(0, 8).join(', ')
+    const hint =
+      preview.length > 0
+        ? ` Available models include: ${preview}.`
+        : ''
+    throw new Error(
+      `Invalid subagent model '${normalizedModel}': ${validation.error ?? 'unknown validation error'}. Run /model to inspect or set an available model.${hint}`,
+    )
+  }
+
+  return { normalizedModel }
 }
 
 /**
