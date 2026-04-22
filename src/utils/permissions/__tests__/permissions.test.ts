@@ -1,7 +1,40 @@
 import { mock, describe, expect, test } from 'bun:test'
 import { createFileStateCacheWithSizeLimit } from '../../../utils/fileStateCache.js'
-import { createSubagentContext } from '../../../utils/forkedAgent.js'
 import { getEmptyToolPermissionContext } from '../../../Tool.js'
+
+const importFresh = async (modulePath: string) =>
+  await import(`${modulePath}?test=${Date.now()}-${Math.random()}`)
+
+mock.module('@claude-code-best/builtin-tools/tools/AgentTool/constants.js', () => ({
+  AGENT_TOOL_NAME: 'Agent',
+  LEGACY_AGENT_TOOL_NAME: 'Task',
+  VERIFICATION_AGENT_TYPE: 'verification',
+  ONE_SHOT_BUILTIN_AGENT_TYPES: new Set<string>(),
+}))
+mock.module('@claude-code-best/builtin-tools/tools/BashTool/shouldUseSandbox.js', () => ({
+  shouldUseSandbox: () => false,
+}))
+mock.module('@claude-code-best/builtin-tools/tools/BashTool/toolName.js', () => ({
+  BASH_TOOL_NAME: 'Bash',
+}))
+mock.module('@claude-code-best/builtin-tools/tools/PowerShellTool/toolName.js', () => ({
+  POWERSHELL_TOOL_NAME: 'PowerShell',
+}))
+mock.module('@claude-code-best/builtin-tools/tools/REPLTool/constants.js', () => ({
+  REPL_TOOL_NAME: 'REPL',
+  REPL_ONLY_TOOLS: new Set<string>(),
+  isReplModeEnabled: () => false,
+}))
+mock.module('@claude-code-best/builtin-tools/tools/TaskOutputTool/constants.js', () => ({
+  TASK_OUTPUT_TOOL_NAME: 'TaskOutput',
+}))
+mock.module('@claude-code-best/builtin-tools/tools/TaskStopTool/prompt.js', () => ({
+  TASK_STOP_TOOL_NAME: 'TaskStop',
+}))
+mock.module('@claude-code-best/builtin-tools/tools/BriefTool/prompt.js', () => ({
+  BRIEF_TOOL_NAME: 'SendUserMessage',
+  LEGACY_BRIEF_TOOL_NAME: 'Brief',
+}))
 
 mock.module('src/utils/log.ts', () => ({
   logError: () => {},
@@ -95,7 +128,16 @@ describe('getDenyRuleForAgent', () => {
 })
 
 describe('Langfuse trace propagation', () => {
-  test('subagent context preserves parent trace for nested side queries', () => {
+  test('subagent context preserves parent trace for nested side queries', async () => {
+    const { createFileStateCacheWithSizeLimit } = await importFresh(
+      '../../../utils/fileStateCache.js',
+    )
+    const { getEmptyToolPermissionContext } = await importFresh(
+      '../../../Tool.js',
+    )
+    const { createSubagentContext } = await importFresh(
+      '../../../utils/forkedAgent.js',
+    )
     const parentTrace = { id: 'parent-trace' } as never
     const parentContext = {
       ...getEmptyToolPermissionContext(),

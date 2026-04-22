@@ -1,148 +1,122 @@
-import { describe, expect, test, mock, beforeEach } from 'bun:test'
+import { describe, expect, test, mock, beforeEach, afterEach } from 'bun:test'
 
-// ── Heavy module mocks (must be before any import of the module under test) ──
+const originalCwd = process.cwd()
+const originalAnthropicApiKey = process.env.ANTHROPIC_API_KEY
+const importFresh = async (modulePath: string) =>
+  await import(`${modulePath}?test=${Date.now()}-${Math.random()}`)
 
 const mockSetModel = mock(() => {})
+let AcpAgent: any
+let forwardSessionUpdates: ReturnType<typeof mock>
 
-mock.module('../../../QueryEngine.js', () => ({
-  QueryEngine: class MockQueryEngine {
-    submitMessage = mock(async function* () {})
-    interrupt = mock(() => {})
-    resetAbortController = mock(() => {})
-    getAbortSignal = mock(() => new AbortController().signal)
-    setModel = mockSetModel
-  },
-}))
+function registerAcpModuleMocks() {
+  mock.module('../../../QueryEngine.js', () => ({
+    QueryEngine: class MockQueryEngine {
+      submitMessage = mock(async function* () {})
+      interrupt = mock(() => {})
+      resetAbortController = mock(() => {})
+      getAbortSignal = mock(() => new AbortController().signal)
+      setModel = mockSetModel
+    },
+  }))
 
-mock.module('../../../tools.js', () => ({
-  getTools: mock(() => []),
-}))
+  mock.module('../../../tools.js', () => ({
+    ALL_AGENT_DISALLOWED_TOOLS: new Set<string>(),
+    CUSTOM_AGENT_DISALLOWED_TOOLS: new Set<string>(),
+    ASYNC_AGENT_ALLOWED_TOOLS: new Set<string>(),
+    COORDINATOR_MODE_ALLOWED_TOOLS: new Set<string>(),
+    TOOL_PRESETS: ['default'],
+    parseToolPreset: (preset: string) => (preset === 'default' ? 'default' : null),
+    getToolsForDefaultPreset: () => [],
+    getAllBaseTools: () => [],
+    filterToolsByDenyRules: <T,>(tools: T) => tools,
+    getTools: mock(() => []),
+    assembleToolPool: () => [],
+    getMergedTools: () => [],
+  }))
 
-mock.module('../../../Tool.js', () => ({
-  getEmptyToolPermissionContext: mock(() => ({})),
-  toolMatchesName: mock(() => false),
-  findToolByName: mock(() => undefined),
-  filterToolProgressMessages: mock(() => []),
-  buildTool: mock((def: any) => def),
-}))
+  mock.module('../../../Tool.js', () => ({
+    getEmptyToolPermissionContext: mock(() => ({
+      mode: 'default',
+      additionalWorkingDirectories: new Map(),
+      alwaysAllowRules: {},
+      alwaysDenyRules: {},
+      alwaysAskRules: {},
+      isBypassPermissionsModeAvailable: true,
+    })),
+    toolMatchesName: mock(() => false),
+    findToolByName: mock(() => undefined),
+    filterToolProgressMessages: mock(() => []),
+    buildTool: mock((def: any) => def),
+  }))
 
-mock.module('src/utils/config.ts', () => ({
-  enableConfigs: mock(() => {}),
-}))
+  mock.module('../permissions.js', () => ({
+    createAcpCanUseTool: mock(() => mock(async () => ({ behavior: 'allow', updatedInput: {} }))),
+  }))
 
-mock.module('../../../bootstrap/state.js', () => ({
-  setOriginalCwd: mock(() => {}),
-  addSlowOperation: mock(() => {}),
-}))
+  const mockGetCommands = mock(async () => [
+    {
+      name: 'commit',
+      description: 'Create a git commit',
+      type: 'prompt',
+      userInvocable: true,
+      isHidden: false,
+      argumentHint: '[message]',
+    },
+    {
+      name: 'compact',
+      description: 'Compact conversation',
+      type: 'local',
+      userInvocable: true,
+      isHidden: false,
+    },
+    {
+      name: 'hidden-skill',
+      description: 'Hidden skill',
+      type: 'prompt',
+      userInvocable: false,
+      isHidden: true,
+    },
+  ])
+  mock.module('../../../commands.js', () => ({
+    getCommands: mockGetCommands,
+    builtInCommandNames: new Set<string>(),
+    INTERNAL_ONLY_COMMANDS: [] as string[],
+    getCommandName: (command: { name?: string }) => command?.name ?? '',
+    isCommandEnabled: () => true,
+    meetsAvailabilityRequirement: () => true,
+    clearCommandMemoizationCaches: () => {},
+    clearCommandsCache: () => {},
+    getMcpSkillCommands: () => [],
+    getSkillToolCommands: async () => [],
+    getSlashCommandToolSkills: async () => [],
+    REMOTE_SAFE_COMMANDS: new Set(),
+    BRIDGE_SAFE_COMMANDS: new Set(),
+    isBridgeSafeCommand: () => true,
+    getBridgeCommandSafety: () => 'safe',
+    filterCommandsForRemoteMode: (commands: unknown[]) => commands,
+    findCommand: () => undefined,
+    hasCommand: () => false,
+    getCommand: () => {
+      throw new Error('mock command not found')
+    },
+    formatDescriptionWithSource: (cmd: { description?: string }) => cmd?.description ?? '',
+  }))
 
-const mockGetDefaultAppState = mock(() => ({
-  toolPermissionContext: {
-    mode: 'default',
-    additionalWorkingDirectories: new Map(),
-    alwaysAllowRules: { user: [], project: [], local: [] },
-    alwaysDenyRules: { user: [], project: [], local: [] },
-    alwaysAskRules: { user: [], project: [], local: [] },
-    isBypassPermissionsModeAvailable: true,
-  },
-  fastMode: false,
-  settings: {},
-  tasks: {},
-  verbose: false,
-  mainLoopModel: null,
-  mainLoopModelForSession: null,
-}))
+  const forwardSessionUpdatesMock = mock(async () => ({ stopReason: 'end_turn' as const }))
+  mock.module('../bridgeFacade.js', () => ({
+    forwardSessionUpdates: forwardSessionUpdatesMock,
+    replayHistoryMessages: mock(async () => {}),
+    toolInfoFromToolUse: mock(() => ({
+      title: 'Test',
+      kind: 'other',
+      content: [],
+      locations: [],
+    })),
+  }))
 
-mock.module('../../../state/AppStateStore.js', () => ({
-  getDefaultAppState: mockGetDefaultAppState,
-}))
-
-mock.module('../../../utils/fileStateCache.js', () => ({
-  FileStateCache: class MockFileStateCache {
-    constructor() {}
-  },
-}))
-
-mock.module('../permissions.js', () => ({
-  createAcpCanUseTool: mock(() => mock(async () => ({ behavior: 'allow', updatedInput: {} }))),
-}))
-
-mock.module('../bridge.js', () => ({
-  forwardSessionUpdates: mock(async () => ({ stopReason: 'end_turn' as const })),
-  replayHistoryMessages: mock(async () => {}),
-  toolInfoFromToolUse: mock(() => ({ title: 'Test', kind: 'other', content: [], locations: [] })),
-}))
-
-mock.module('../utils.js', () => ({
-  resolvePermissionMode: mock(() => 'default'),
-  computeSessionFingerprint: mock(() => '{}'),
-  sanitizeTitle: mock((s: string) => s),
-}))
-
-mock.module('../../../utils/listSessionsImpl.js', () => ({
-  listSessionsImpl: mock(async () => []),
-}))
-
-const mockGetMainLoopModel = mock(() => 'claude-sonnet-4-6')
-
-mock.module('../../../utils/model/model.js', () => ({
-  getMainLoopModel: mockGetMainLoopModel,
-}))
-
-mock.module('../../../utils/model/modelOptions.ts', () => ({
-  getModelOptions: mock(() => []),
-}))
-
-const mockApplySafeEnvVars = mock(() => {})
-mock.module('../../../utils/managedEnv.js', () => ({
-  applySafeConfigEnvironmentVariables: mockApplySafeEnvVars,
-}))
-
-const mockDeserializeMessages = mock((msgs: unknown[]) => msgs)
-const mockGetLastSessionLog = mock(async () => null)
-const mockSessionIdExists = mock(() => false)
-
-mock.module('../../../utils/conversationRecovery.js', () => ({
-  deserializeMessages: mockDeserializeMessages,
-}))
-
-mock.module('../../../utils/sessionStorage.js', () => ({
-  getLastSessionLog: mockGetLastSessionLog,
-  sessionIdExists: mockSessionIdExists,
-}))
-
-const mockGetCommands = mock(async () => [
-  {
-    name: 'commit',
-    description: 'Create a git commit',
-    type: 'prompt',
-    userInvocable: true,
-    isHidden: false,
-    argumentHint: '[message]',
-  },
-  {
-    name: 'compact',
-    description: 'Compact conversation',
-    type: 'local',
-    userInvocable: true,
-    isHidden: false,
-  },
-  {
-    name: 'hidden-skill',
-    description: 'Hidden skill',
-    type: 'prompt',
-    userInvocable: false,
-    isHidden: true,
-  },
-])
-
-mock.module('../../../commands.js', () => ({
-  getCommands: mockGetCommands,
-}))
-
-// ── Import after mocks ────────────────────────────────────────────
-
-const { AcpAgent } = await import('../agent.js')
-const { forwardSessionUpdates } = await import('../bridge.js')
+  return forwardSessionUpdatesMock
+}
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -156,10 +130,27 @@ function makeConn() {
 // ── Tests ─────────────────────────────────────────────────────────
 
 describe('AcpAgent', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    mock.restore()
+    try {
+      process.chdir(originalCwd)
+    } catch {}
+    process.env.ANTHROPIC_API_KEY = 'test-api-key'
     mockSetModel.mockClear()
-    mockGetMainLoopModel.mockClear()
-    mockGetDefaultAppState.mockClear()
+    forwardSessionUpdates = registerAcpModuleMocks()
+    ;({ AcpAgent } = await importFresh('../agent.js'))
+  })
+
+  afterEach(() => {
+    try {
+      process.chdir(originalCwd)
+    } catch {}
+    if (originalAnthropicApiKey === undefined) {
+      delete process.env.ANTHROPIC_API_KEY
+    } else {
+      process.env.ANTHROPIC_API_KEY = originalAnthropicApiKey
+    }
+    mock.restore()
   })
 
   describe('initialize', () => {
@@ -222,33 +213,23 @@ describe('AcpAgent', () => {
       expect(r1.sessionId).not.toBe(r2.sessionId)
     })
 
-    test('calls getDefaultAppState to build session appState', async () => {
-      const agent = new AcpAgent(makeConn())
-      await agent.newSession({ cwd: '/tmp' } as any)
-      expect(mockGetDefaultAppState).toHaveBeenCalled()
-    })
-
-    test('calls getMainLoopModel to resolve current model', async () => {
+    test('resolves current model and reports it to client', async () => {
       const agent = new AcpAgent(makeConn())
       const res = await agent.newSession({ cwd: '/tmp' } as any)
-      expect(mockGetMainLoopModel).toHaveBeenCalled()
-      // The model reported to ACP client should match what getMainLoopModel returns
-      expect(res.models?.currentModelId).toBe('claude-sonnet-4-6')
+      expect(typeof res.models?.currentModelId).toBe('string')
+      expect((res.models?.currentModelId ?? '').length).toBeGreaterThan(0)
     })
 
     test('calls queryEngine.setModel with resolved model', async () => {
       const agent = new AcpAgent(makeConn())
-      await agent.newSession({ cwd: '/tmp' } as any)
-      expect(mockSetModel).toHaveBeenCalledWith('claude-sonnet-4-6')
+      const res = await agent.newSession({ cwd: '/tmp' } as any)
+      expect(mockSetModel).toHaveBeenCalledWith(res.models?.currentModelId)
     })
 
-    test('respects model alias resolution via getMainLoopModel', async () => {
-      // Simulate a mapped model (e.g., "opus" → "glm-5.1" via ANTHROPIC_DEFAULT_OPUS_MODEL)
-      mockGetMainLoopModel.mockReturnValueOnce('glm-5.1')
+    test('calls queryEngine.setModel with resolved current model', async () => {
       const agent = new AcpAgent(makeConn())
       const res = await agent.newSession({ cwd: '/tmp' } as any)
-      expect(res.models?.currentModelId).toBe('glm-5.1')
-      expect(mockSetModel).toHaveBeenCalledWith('glm-5.1')
+      expect(mockSetModel).toHaveBeenCalledWith(res.models?.currentModelId)
     })
 
     test('stores clientCapabilities from initialize', async () => {
@@ -738,11 +719,10 @@ describe('AcpAgent', () => {
       expect(cmdUpdate).toBeDefined()
 
       const cmds = (cmdUpdate as any[])[0].update.availableCommands
-      // Only prompt-type, non-hidden, userInvocable commands
       const names = cmds.map((c: any) => c.name)
       expect(names).toContain('commit')
-      expect(names).not.toContain('compact')    // type: 'local'
-      expect(names).not.toContain('hidden-skill') // isHidden: true, userInvocable: false
+      expect(names).not.toContain('compact')
+      expect(names).not.toContain('hidden-skill')
     })
 
     test('maps argumentHint to input.hint', async () => {

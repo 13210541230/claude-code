@@ -4,7 +4,7 @@ import {
   enqueue,
   getCommandQueue,
   resetCommandQueue,
-} from 'src/utils/messageQueueManager.js'
+} from '../../../../../../src/utils/messageQueueManager.js'
 
 describe('SleepTool', () => {
   beforeEach(() => {

@@ -1,15 +1,27 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, test } from 'bun:test'
 
-const _abortMock = () => ({
-  AbortError: class AbortError extends Error {
-    constructor(message?: string) { super(message); this.name = 'AbortError' }
-  },
+class AbortError extends Error {
+  constructor(message?: string) {
+    super(message)
+    this.name = 'AbortError'
+  }
+}
+
+const abortErrorModule = {
+  AbortError,
   isAbortError: (e: unknown) => e instanceof Error && (e as Error).name === 'AbortError',
-})
-mock.module('src/utils/errors.js', _abortMock)
-mock.module('src/utils/errors', _abortMock)
+}
 
-import { extractBingResults, decodeHtmlEntities } from '../adapters/bingAdapter'
+const applyAbortMock = () => {
+  mock.module('src/utils/errors.js', () => abortErrorModule)
+  mock.module('src/utils/errors', () => abortErrorModule)
+}
+applyAbortMock()
+
+const importBingAdapter = async () =>
+  await import('../adapters/bingAdapter')
+
+const { extractBingResults, decodeHtmlEntities } = await importBingAdapter()
 
 // ---------------------------------------------------------------------------
 // decodeHtmlEntities
@@ -298,9 +310,14 @@ describe('extractBingResults', () => {
 describe('BingSearchAdapter.search', () => {
   // Dynamic import so mock.module() takes effect
   const createAdapter = async () => {
-    const { BingSearchAdapter } = await import('../adapters/bingAdapter')
+    const { BingSearchAdapter } = await importBingAdapter()
     return new BingSearchAdapter()
   }
+
+  afterEach(() => {
+    mock.restore()
+    applyAbortMock()
+  })
 
   const SAMPLE_HTML = `
     <ol id="b_results">
@@ -466,10 +483,9 @@ describe('BingSearchAdapter.search', () => {
     const controller = new AbortController()
     controller.abort()
 
-    const { AbortError } = await import('src/utils/errors')
     await expect(
       adapter.search('test', { signal: controller.signal }),
-    ).rejects.toThrow(AbortError)
+    ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   test('re-throws non-abort axios errors', async () => {

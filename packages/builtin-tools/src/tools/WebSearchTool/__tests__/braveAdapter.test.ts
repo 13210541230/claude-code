@@ -3,21 +3,32 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 // Defensive mock: agent.test.ts mocks config.js which can corrupt Bun's
 // src/* path alias resolution. Provide AbortError directly so the dynamic
 // import in createAdapter() never needs to resolve the alias at runtime.
-const _abortMock = () => ({
-  AbortError: class AbortError extends Error {
-    constructor(message?: string) { super(message); this.name = 'AbortError' }
-  },
+class AbortError extends Error {
+  constructor(message?: string) {
+    super(message)
+    this.name = 'AbortError'
+  }
+}
+
+const abortErrorModule = {
+  AbortError,
   isAbortError: (e: unknown) => e instanceof Error && (e as Error).name === 'AbortError',
-})
-mock.module('src/utils/errors.js', _abortMock)
-mock.module('src/utils/errors', _abortMock)
+}
+
+const applyAbortMock = () => {
+  mock.module('src/utils/errors.js', () => abortErrorModule)
+  mock.module('src/utils/errors', () => abortErrorModule)
+}
+
+const importBraveAdapter = async () =>
+  await import('../adapters/braveAdapter')
 
 const originalBraveSearchApiKey = process.env.BRAVE_SEARCH_API_KEY
 const originalBraveApiKey = process.env.BRAVE_API_KEY
 
 describe('BraveSearchAdapter.search', () => {
   const createAdapter = async () => {
-    const { BraveSearchAdapter } = await import('../adapters/braveAdapter')
+    const { BraveSearchAdapter } = await importBraveAdapter()
     return new BraveSearchAdapter()
   }
 
@@ -39,6 +50,7 @@ describe('BraveSearchAdapter.search', () => {
   }
 
   beforeEach(() => {
+    applyAbortMock()
     process.env.BRAVE_SEARCH_API_KEY = 'test-brave-key'
     delete process.env.BRAVE_API_KEY
   })
@@ -202,10 +214,9 @@ describe('BraveSearchAdapter.search', () => {
     const controller = new AbortController()
     controller.abort()
 
-    const { AbortError } = await import('src/utils/errors')
     await expect(
       adapter.search('test', { signal: controller.signal }),
-    ).rejects.toThrow(AbortError)
+    ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
   test('re-throws non-abort axios errors', async () => {
