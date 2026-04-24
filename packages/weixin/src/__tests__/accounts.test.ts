@@ -1,15 +1,25 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-const testDir = mkdtempSync(join(tmpdir(), 'weixin-test-accounts-'))
-process.env.WEIXIN_STATE_DIR = testDir
+let testDir = ''
+const originalStateDir = process.env.WEIXIN_STATE_DIR
+
+beforeEach(() => {
+  testDir = mkdtempSync(join(tmpdir(), 'weixin-test-accounts-'))
+  process.env.WEIXIN_STATE_DIR = testDir
+})
 
 import { clearAccount, loadAccount, saveAccount } from '../accounts.js'
 
 afterEach(() => {
   rmSync(testDir, { recursive: true, force: true })
+  if (originalStateDir === undefined) {
+    delete process.env.WEIXIN_STATE_DIR
+  } else {
+    process.env.WEIXIN_STATE_DIR = originalStateDir
+  }
 })
 
 describe('account storage', () => {
